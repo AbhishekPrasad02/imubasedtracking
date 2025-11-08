@@ -2,350 +2,1051 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phone IMU Orientation Visualizer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IMU Squash Game</title>
+    
+    <!-- 
+    ========================================
+    IMU SQUASH GAME - README
+    ========================================
+    
+    DESCRIPTION:
+    A single-player squash game controlled by phone motion sensors (IMU).
+    Hold your phone like a racket and swing to hit the ball!
+    
+    TESTING REQUIREMENTS:
+    
+    Mobile (iOS/Android):
+    - Must use HTTPS (deploy to GitHub Pages or similar)
+    - iOS: Requires explicit permission via button tap
+    - Android: Usually auto-grants sensor permission
+    - Grant motion/orientation sensor permission when prompted
+    
+    Desktop Testing:
+    - Use the debug controls (sliders + spacebar to swing)
+    - No real IMU data available on desktop
+    - Open browser console to see sensor values
+    
+    Local Development:
+    - For localhost testing with sensors:
+      Chrome: Navigate to chrome://flags, enable "Insecure origins treated as secure", add "http://localhost:PORT"
+      Firefox/Safari: Generally allow localhost sensor access
+    - iOS Safari: Even localhost requires the permission flow
+    
+    CONTROLS:
+    - Mobile: Swing phone forward quickly to hit ball
+    - Desktop: Use sliders for orientation, SPACEBAR or button to swing
+    
+    3D RENDERING APPROACH:
+    Using Canvas 2D with perspective projection for simplicity and performance.
+    This avoids WebGL complexity while still providing clear 3D visualization.
+    
+    ========================================
+    -->
+    
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            touch-action: none;
         }
-
+        
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        #gameContainer {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            padding: 20px;
         }
-
-        .container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 100%;
+        
+        #gameCanvas {
+            flex: 1;
+            background: linear-gradient(180deg, #0a1929 0%, #1a2f4a 50%, #2a3f5a 100%);
+            display: block;
         }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 20px;
-            font-size: 24px;
-        }
-
-        #canvas-container {
-            width: 100%;
-            height: 300px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        canvas {
-            max-width: 100%;
-            max-height: 100%;
-        }
-
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        button {
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid white;
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        button:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
-        }
-
-        button:active {
-            transform: translateY(0);
-        }
-
-        button.active {
-            background: rgba(76, 175, 80, 0.5);
-            border-color: #4CAF50;
-        }
-
-        .data-display {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-
-        .data-row {
+        
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
             display: flex;
             justify-content: space-between;
-            margin: 8px 0;
-            font-size: 14px;
+            pointer-events: none;
         }
-
-        .data-label {
+        
+        .hudPanel {
+            background: rgba(0,0,0,0.6);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            backdrop-filter: blur(5px);
+        }
+        
+        #score {
+            font-size: 24px;
             font-weight: bold;
         }
-
-        .status {
-            text-align: center;
+        
+        #debugOverlay {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
             padding: 10px;
             border-radius: 8px;
-            background: rgba(0, 0, 0, 0.2);
+            font-size: 11px;
+            font-family: monospace;
+            max-width: 300px;
+            display: none;
+        }
+        
+        #debugOverlay.active {
+            display: block;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 30px;
+            border-radius: 16px;
+            text-align: center;
+            max-width: 90vw;
+            width: 400px;
+        }
+        
+        #controls.hidden {
+            display: none;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-weight: bold;
+            transition: transform 0.1s;
+        }
+        
+        button:active {
+            transform: scale(0.95);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #desktopControls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+            pointer-events: all;
+        }
+        
+        #desktopControls.active {
+            display: block;
+        }
+        
+        .slider {
+            width: 150px;
+            margin: 5px 0;
+        }
+        
+        .sliderLabel {
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+        }
+        
+        #minimap {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 120px;
+            height: 120px;
+            background: rgba(0,0,0,0.6);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        
+        h2 {
             margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
             font-size: 14px;
-        }
-
-        .status.error {
-            background: rgba(244, 67, 54, 0.3);
-        }
-
-        .status.success {
-            background: rgba(76, 175, 80, 0.3);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>📱 Phone Orientation Visualizer</h1>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
         
-        <div id="status" class="status">Click "Start Tracking" to begin</div>
+        <div id="hud">
+            <div class="hudPanel">
+                <div id="score">Score: 0</div>
+            </div>
+            <div class="hudPanel">
+                <div>Speed: <span id="ballSpeed">0</span> m/s</div>
+                <div>Power: <span id="hitPower">0</span>%</div>
+            </div>
+        </div>
         
-        <div id="canvas-container">
-            <canvas id="canvas" width="400" height="300"></canvas>
+        <canvas id="minimap"></canvas>
+        
+        <div id="debugOverlay">
+            <div>Pitch: <span id="dbgPitch">0</span>°</div>
+            <div>Roll: <span id="dbgRoll">0</span>°</div>
+            <div>Speed: <span id="dbgSpeed">0</span>°/s</div>
+            <div>Swing: <span id="dbgSwing">NO</span></div>
+            <div>FPS: <span id="dbgFps">0</span></div>
         </div>
-
-        <div class="controls">
-            <button id="startBtn">Start Tracking</button>
-            <button id="resetBtn">Reset Orientation</button>
+        
+        <div id="controls">
+            <h2>🎾 IMU Squash</h2>
+            <p class="status" id="sensorStatus">Checking sensor availability...</p>
+            <button id="requestPermission">Enable Motion Sensors</button>
+            <button id="startGame" disabled>Start Game</button>
+            <button id="toggleDebug">Toggle Debug Info</button>
         </div>
-
-        <div class="data-display">
-            <div class="data-row">
-                <span class="data-label">Alpha (Z-axis):</span>
-                <span id="alpha">0°</span>
+        
+        <div id="desktopControls">
+            <div style="margin-bottom: 10px; font-weight: bold;">Desktop Debug</div>
+            <div class="sliderLabel">
+                <span>Pitch:</span>
+                <span id="pitchVal">0</span>°
             </div>
-            <div class="data-row">
-                <span class="data-label">Beta (X-axis):</span>
-                <span id="beta">0°</span>
+            <input type="range" class="slider" id="pitchSlider" min="-90" max="90" value="0">
+            
+            <div class="sliderLabel">
+                <span>Roll:</span>
+                <span id="rollVal">0</span>°
             </div>
-            <div class="data-row">
-                <span class="data-label">Gamma (Y-axis):</span>
-                <span id="gamma">0°</span>
+            <input type="range" class="slider" id="rollSlider" min="-90" max="90" value="0">
+            
+            <div class="sliderLabel">
+                <span>Yaw:</span>
+                <span id="yawVal">0</span>°
             </div>
+            <input type="range" class="slider" id="yawSlider" min="-180" max="180" value="0">
+            
+            <button id="swingButton" style="width: 100%; margin-top: 10px;">Swing (Space)</button>
         </div>
     </div>
 
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const startBtn = document.getElementById('startBtn');
-        const resetBtn = document.getElementById('resetBtn');
-        const statusDiv = document.getElementById('status');
-        
-        let isTracking = false;
-        let alpha = 0, beta = 0, gamma = 0;
-        let offsetAlpha = 0, offsetBeta = 0, offsetGamma = 0;
-
-        // Draw 3D phone representation
-        function drawPhone() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // ========================================
+        // GAME NAMESPACE
+        // ========================================
+        const Game = {
+            // Canvas & rendering
+            canvas: null,
+            ctx: null,
+            miniCanvas: null,
+            miniCtx: null,
+            width: 800,
+            height: 600,
             
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height / 2;
+            // Game state
+            score: 0,
+            gameRunning: false,
             
-            // Apply rotations
-            const rotX = (beta - offsetBeta) * Math.PI / 180;
-            const rotY = (gamma - offsetGamma) * Math.PI / 180;
-            const rotZ = (alpha - offsetAlpha) * Math.PI / 180;
+            // World constants
+            WALL_Z: -10,        // Wall distance
+            PLAYER_Z: 5,        // Player position
+            FLOOR_Y: 5,         // Floor height
+            COURT_WIDTH: 8,     // Court width
+            GRAVITY: 9.8,       // m/s²
+            WALL_RESTITUTION: 0.85,
+            FLOOR_RESTITUTION: 0.75,
             
-            // Define phone corners (as a rectangular prism)
-            const width = 60;
-            const height = 120;
-            const depth = 10;
+            // Physics timing
+            dt: 1/60,
+            accumulator: 0,
+            lastTime: 0,
+            fps: 0,
+            fpsFrames: 0,
+            fpsTime: 0,
             
-            // 3D vertices of the phone
-            let vertices = [
-                [-width/2, -height/2, -depth/2],
-                [width/2, -height/2, -depth/2],
-                [width/2, height/2, -depth/2],
-                [-width/2, height/2, -depth/2],
-                [-width/2, -height/2, depth/2],
-                [width/2, -height/2, depth/2],
-                [width/2, height/2, depth/2],
-                [-width/2, height/2, depth/2]
-            ];
+            // Ball state
+            ball: {
+                x: 0, y: 2, z: 3,
+                vx: 0, vy: 0, vz: 0,
+                radius: 0.15,
+                active: true
+            },
             
-            // Rotate vertices
-            vertices = vertices.map(v => {
-                // Rotate around X axis
-                let y = v[1] * Math.cos(rotX) - v[2] * Math.sin(rotX);
-                let z = v[1] * Math.sin(rotX) + v[2] * Math.cos(rotX);
-                let x = v[0];
-                
-                // Rotate around Y axis
-                let x2 = x * Math.cos(rotY) + z * Math.sin(rotY);
-                let z2 = -x * Math.sin(rotY) + z * Math.cos(rotY);
-                
-                // Rotate around Z axis
-                let x3 = x2 * Math.cos(rotZ) - y * Math.sin(rotZ);
-                let y3 = x2 * Math.sin(rotZ) + y * Math.cos(rotZ);
-                
-                return [x3, y3, z2];
-            });
+            // Player state
+            player: {
+                x: 0,
+                targetX: 0,
+                z: 5,
+                racketPitch: 0,
+                racketRoll: 0,
+                racketYaw: 0
+            },
             
-            // Project to 2D and draw
-            const scale = 2;
-            const projected = vertices.map(v => [
-                centerX + v[0] * scale,
-                centerY + v[1] * scale,
-                v[2]
-            ]);
+            // IMU sensor data
+            sensor: {
+                pitch: 0,
+                roll: 0,
+                yaw: 0,
+                pitchHistory: [],
+                timeHistory: [],
+                speed: 0,
+                speedFiltered: 0,
+                available: false,
+                permitted: false
+            },
             
-            // Define faces
-            const faces = [
-                [0, 1, 2, 3], // Front
-                [4, 5, 6, 7], // Back
-                [0, 1, 5, 4], // Bottom
-                [2, 3, 7, 6], // Top
-                [0, 3, 7, 4], // Left
-                [1, 2, 6, 5]  // Right
-            ];
+            // Swing detection
+            swing: {
+                threshold: 80,      // degrees/second
+                cooldown: 0,
+                cooldownTime: 0.5   // seconds
+            },
             
-            const faceColors = [
-                'rgba(100, 150, 255, 0.8)', // Front - blue
-                'rgba(80, 120, 200, 0.6)',  // Back
-                'rgba(150, 150, 150, 0.7)', // Bottom
-                'rgba(150, 150, 150, 0.7)', // Top
-                'rgba(120, 140, 220, 0.7)', // Left
-                'rgba(120, 140, 220, 0.7)'  // Right
-            ];
-            
-            // Calculate average Z for each face (for depth sorting)
-            const facesWithDepth = faces.map((face, idx) => {
-                const avgZ = face.reduce((sum, i) => sum + projected[i][2], 0) / face.length;
-                return { face, color: faceColors[idx], depth: avgZ };
-            });
-            
-            // Sort faces by depth (painter's algorithm)
-            facesWithDepth.sort((a, b) => a.depth - b.depth);
-            
-            // Draw faces
-            facesWithDepth.forEach(({ face, color }) => {
-                ctx.beginPath();
-                ctx.moveTo(projected[face[0]][0], projected[face[0]][1]);
-                for (let i = 1; i < face.length; i++) {
-                    ctx.lineTo(projected[face[i]][0], projected[face[i]][1]);
-                }
-                ctx.closePath();
-                ctx.fillStyle = color;
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            });
-            
-            // Draw a circle on the front face to indicate orientation
-            const frontCenter = [
-                (projected[0][0] + projected[1][0] + projected[2][0] + projected[3][0]) / 4,
-                (projected[0][1] + projected[1][1] + projected[2][1] + projected[3][1]) / 4
-            ];
-            ctx.beginPath();
-            ctx.arc(frontCenter[0], frontCenter[1] - 30, 8, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 100, 100, 0.9)';
-            ctx.fill();
-        }
-
-        // Handle device orientation
-        function handleOrientation(event) {
-            if (!isTracking) return;
-            
-            alpha = event.alpha || 0;
-            beta = event.beta || 0;
-            gamma = event.gamma || 0;
-            
-            document.getElementById('alpha').textContent = alpha.toFixed(1) + '°';
-            document.getElementById('beta').textContent = beta.toFixed(1) + '°';
-            document.getElementById('gamma').textContent = gamma.toFixed(1) + '°';
-            
-            drawPhone();
-        }
-
-        // Start tracking
-        async function startTracking() {
-            if (isTracking) {
-                isTracking = false;
-                startBtn.textContent = 'Start Tracking';
-                startBtn.classList.remove('active');
-                statusDiv.textContent = 'Tracking stopped';
-                statusDiv.className = 'status';
-                return;
+            // Desktop fallback
+            desktop: {
+                active: false,
+                pitch: 0,
+                roll: 0,
+                yaw: 0
             }
+        };
 
-            // Request permission for iOS 13+
-            if (typeof DeviceOrientationEvent !== 'undefined' && 
-                typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try {
+        // ========================================
+        // INITIALIZATION
+        // ========================================
+        function init() {
+            // Setup canvas
+            Game.canvas = document.getElementById('gameCanvas');
+            Game.ctx = Game.canvas.getContext('2d');
+            Game.miniCanvas = document.getElementById('minimap');
+            Game.miniCtx = Game.miniCanvas.getContext('2d');
+            
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Setup controls
+            document.getElementById('requestPermission').addEventListener('click', requestSensorPermission);
+            document.getElementById('startGame').addEventListener('click', startGame);
+            document.getElementById('toggleDebug').addEventListener('click', toggleDebug);
+            
+            // Desktop controls
+            setupDesktopControls();
+            
+            // Check sensor availability
+            checkSensorAvailability();
+            
+            // Start render loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resizeCanvas() {
+            Game.canvas.width = window.innerWidth;
+            Game.canvas.height = window.innerHeight;
+            Game.width = Game.canvas.width;
+            Game.height = Game.canvas.height;
+            
+            Game.miniCanvas.width = 120;
+            Game.miniCanvas.height = 120;
+        }
+
+        // ========================================
+        // SENSOR HANDLING
+        // ========================================
+        function checkSensorAvailability() {
+            const status = document.getElementById('sensorStatus');
+            
+            if (window.DeviceOrientationEvent) {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ requires permission
+                    status.textContent = '📱 iOS detected - permission required';
+                    Game.sensor.available = true;
+                } else {
+                    // Android or older iOS
+                    status.textContent = '📱 Sensors available';
+                    Game.sensor.available = true;
+                    Game.sensor.permitted = true;
+                    document.getElementById('startGame').disabled = false;
+                }
+            } else {
+                // Desktop fallback
+                status.textContent = '🖥️ Desktop mode - using debug controls';
+                Game.desktop.active = true;
+                document.getElementById('desktopControls').classList.add('active');
+                document.getElementById('startGame').disabled = false;
+            }
+        }
+
+        async function requestSensorPermission() {
+            const btn = document.getElementById('requestPermission');
+            const status = document.getElementById('sensorStatus');
+            
+            try {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                     const permission = await DeviceOrientationEvent.requestPermission();
-                    if (permission !== 'granted') {
-                        statusDiv.textContent = 'Permission denied';
-                        statusDiv.className = 'status error';
-                        return;
+                    if (permission === 'granted') {
+                        Game.sensor.permitted = true;
+                        status.textContent = '✅ Sensors enabled!';
+                        document.getElementById('startGame').disabled = false;
+                        btn.disabled = true;
+                        attachSensorListeners();
+                    } else {
+                        status.textContent = '❌ Permission denied';
                     }
-                } catch (error) {
-                    statusDiv.textContent = 'Error: ' + error.message;
-                    statusDiv.className = 'status error';
-                    return;
+                } else {
+                    Game.sensor.permitted = true;
+                    status.textContent = '✅ Sensors enabled!';
+                    document.getElementById('startGame').disabled = false;
+                    btn.disabled = true;
+                    attachSensorListeners();
                 }
+            } catch (error) {
+                status.textContent = '❌ Error: ' + error.message;
+                console.error('Sensor permission error:', error);
             }
+        }
 
-            // Check if device orientation is supported
-            if (!window.DeviceOrientationEvent) {
-                statusDiv.textContent = 'Device orientation not supported';
-                statusDiv.className = 'status error';
-                return;
-            }
-
-            isTracking = true;
-            startBtn.textContent = 'Stop Tracking';
-            startBtn.classList.add('active');
-            statusDiv.textContent = 'Tracking active';
-            statusDiv.className = 'status success';
-            
+        function attachSensorListeners() {
             window.addEventListener('deviceorientation', handleOrientation);
         }
 
-        // Reset orientation
-        function resetOrientation() {
-            offsetAlpha = alpha;
-            offsetBeta = beta;
-            offsetGamma = gamma;
-            drawPhone();
+        function handleOrientation(event) {
+            if (!Game.gameRunning) return;
+            
+            // Extract orientation angles
+            // Beta = pitch (front-back tilt), Gamma = roll (left-right tilt), Alpha = yaw (compass)
+            Game.sensor.pitch = event.beta || 0;   // -180 to 180
+            Game.sensor.roll = event.gamma || 0;   // -90 to 90
+            Game.sensor.yaw = event.alpha || 0;    // 0 to 360
+            
+            // Calculate speed from pitch derivative
+            updateSwingSpeed();
         }
 
-        startBtn.addEventListener('click', startTracking);
-        resetBtn.addEventListener('click', resetOrientation);
+        function updateSwingSpeed() {
+            const now = performance.now();
+            const pitch = Game.sensor.pitch;
+            
+            // Maintain circular buffer (last 150ms)
+            Game.sensor.pitchHistory.push(pitch);
+            Game.sensor.timeHistory.push(now);
+            
+            // Remove old entries
+            while (Game.sensor.timeHistory.length > 0 && 
+                   now - Game.sensor.timeHistory[0] > 150) {
+                Game.sensor.pitchHistory.shift();
+                Game.sensor.timeHistory.shift();
+            }
+            
+            // Calculate speed (degrees per second)
+            if (Game.sensor.pitchHistory.length >= 2) {
+                const idx = Game.sensor.pitchHistory.length - 1;
+                const deltaPitch = Game.sensor.pitchHistory[idx] - Game.sensor.pitchHistory[0];
+                const deltaTime = (Game.sensor.timeHistory[idx] - Game.sensor.timeHistory[0]) / 1000;
+                
+                if (deltaTime > 0) {
+                    const rawSpeed = Math.abs(deltaPitch / deltaTime);
+                    
+                    // Exponential moving average filter (alpha = 0.4)
+                    Game.sensor.speed = rawSpeed;
+                    Game.sensor.speedFiltered = 0.4 * rawSpeed + 0.6 * Game.sensor.speedFiltered;
+                }
+            }
+        }
 
-        // Initial draw
-        drawPhone();
+        function setupDesktopControls() {
+            const pitchSlider = document.getElementById('pitchSlider');
+            const rollSlider = document.getElementById('rollSlider');
+            const yawSlider = document.getElementById('yawSlider');
+            const swingBtn = document.getElementById('swingButton');
+            
+            pitchSlider.addEventListener('input', (e) => {
+                Game.desktop.pitch = parseFloat(e.target.value);
+                document.getElementById('pitchVal').textContent = Math.round(Game.desktop.pitch);
+            });
+            
+            rollSlider.addEventListener('input', (e) => {
+                Game.desktop.roll = parseFloat(e.target.value);
+                document.getElementById('rollVal').textContent = Math.round(Game.desktop.roll);
+            });
+            
+            yawSlider.addEventListener('input', (e) => {
+                Game.desktop.yaw = parseFloat(e.target.value);
+                document.getElementById('yawVal').textContent = Math.round(Game.desktop.yaw);
+            });
+            
+            swingBtn.addEventListener('click', simulateSwing);
+            window.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && Game.gameRunning) {
+                    e.preventDefault();
+                    simulateSwing();
+                }
+            });
+        }
+
+        function simulateSwing() {
+            if (Game.swing.cooldown > 0) return;
+            Game.sensor.speedFiltered = 150; // Simulate fast swing
+            detectSwing();
+        }
+
+        // ========================================
+        // GAME LOGIC
+        // ========================================
+        function startGame() {
+            document.getElementById('controls').classList.add('hidden');
+            Game.gameRunning = true;
+            Game.score = 0;
+            resetBall();
+            Game.lastTime = performance.now();
+        }
+
+        function resetBall() {
+            Game.ball.x = 0;
+            Game.ball.y = 2;
+            Game.ball.z = 3;
+            Game.ball.vx = 0;
+            Game.ball.vy = 0;
+            Game.ball.vz = 0;
+            Game.ball.active = true;
+        }
+
+        function gameLoop(currentTime) {
+            requestAnimationFrame(gameLoop);
+            
+            if (!Game.gameRunning) {
+                render();
+                return;
+            }
+            
+            // Fixed timestep physics
+            const frameTime = Math.min((currentTime - Game.lastTime) / 1000, 0.1);
+            Game.lastTime = currentTime;
+            Game.accumulator += frameTime;
+            
+            while (Game.accumulator >= Game.dt) {
+                physicsStep(Game.dt);
+                Game.accumulator -= Game.dt;
+            }
+            
+            // Update FPS counter
+            Game.fpsFrames++;
+            Game.fpsTime += frameTime;
+            if (Game.fpsTime >= 1) {
+                Game.fps = Math.round(Game.fpsFrames / Game.fpsTime);
+                Game.fpsFrames = 0;
+                Game.fpsTime = 0;
+            }
+            
+            render();
+            updateHUD();
+        }
+
+        function physicsStep(dt) {
+            // Update swing cooldown
+            if (Game.swing.cooldown > 0) {
+                Game.swing.cooldown -= dt;
+            }
+            
+            // Get current racket orientation
+            if (Game.desktop.active) {
+                Game.player.racketPitch = Game.desktop.pitch;
+                Game.player.racketRoll = Game.desktop.roll;
+                Game.player.racketYaw = Game.desktop.yaw;
+            } else {
+                Game.player.racketPitch = Game.sensor.pitch;
+                Game.player.racketRoll = Game.sensor.roll;
+                Game.player.racketYaw = Game.sensor.yaw;
+            }
+            
+            // Detect swing
+            detectSwing();
+            
+            // Update ball physics
+            if (Game.ball.active) {
+                // Apply gravity
+                Game.ball.vy += Game.GRAVITY * dt;
+                
+                // Update position
+                Game.ball.x += Game.ball.vx * dt;
+                Game.ball.y += Game.ball.vy * dt;
+                Game.ball.z += Game.ball.vz * dt;
+                
+                // Check collisions
+                checkCollisions();
+                
+                // Clamp to court bounds (x-axis)
+                if (Math.abs(Game.ball.x) > Game.COURT_WIDTH / 2) {
+                    Game.ball.x = Math.sign(Game.ball.x) * Game.COURT_WIDTH / 2;
+                    Game.ball.vx *= -Game.WALL_RESTITUTION;
+                }
+                
+                // Check if ball went behind player (lost)
+                if (Game.ball.z > Game.PLAYER_Z + 2) {
+                    resetBall();
+                }
+            }
+            
+            // Auto-move player to intercept
+            autoMovePlayer(dt);
+        }
+
+        function detectSwing() {
+            // Check if speed exceeds threshold and not in cooldown
+            if (Game.sensor.speedFiltered > Game.swing.threshold && 
+                Game.swing.cooldown <= 0 &&
+                Game.ball.z > Game.PLAYER_Z - 1 && 
+                Game.ball.z < Game.PLAYER_Z + 1) {
+                
+                // Apply hit impulse
+                applyHitImpulse();
+                Game.swing.cooldown = Game.swing.cooldownTime;
+                
+                // Vibrate if available
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            }
+        }
+
+        function applyHitImpulse() {
+            // Calculate hit direction from racket orientation
+            const pitch = Game.player.racketPitch * Math.PI / 180;
+            const roll = Game.player.racketRoll * Math.PI / 180;
+            
+            // Forward direction with pitch/roll influence
+            const dirX = Math.sin(roll) * 0.3;
+            const dirY = -Math.sin(pitch) * 0.5 - 0.3; // Add upward bias
+            const dirZ = -Math.cos(pitch) * Math.cos(roll);
+            
+            // Normalize direction
+            const len = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
+            const normX = dirX / len;
+            const normY = dirY / len;
+            const normZ = dirZ / len;
+            
+            // Calculate impulse magnitude from swing speed
+            const hitSpeed = Game.sensor.speedFiltered;
+            const impulseMag = Math.min(Math.max(hitSpeed * 0.05, 5), 15);
+            
+            // Apply impulse with small randomness
+            const randomFactor = 0.9 + Math.random() * 0.2;
+            Game.ball.vx = normX * impulseMag * randomFactor;
+            Game.ball.vy = normY * impulseMag * randomFactor;
+            Game.ball.vz = normZ * impulseMag * randomFactor;
+            
+            Game.score++;
+            
+            // Update HUD power display
+            document.getElementById('hitPower').textContent = Math.round((impulseMag / 15) * 100);
+        }
+
+        function checkCollisions() {
+            const ball = Game.ball;
+            
+            // Floor collision
+            if (ball.y + ball.radius >= Game.FLOOR_Y) {
+                ball.y = Game.FLOOR_Y - ball.radius;
+                ball.vy *= -Game.FLOOR_RESTITUTION;
+                
+                // Dampen horizontal velocity slightly
+                ball.vx *= 0.95;
+                ball.vz *= 0.95;
+            }
+            
+            // Wall collision (front wall)
+            if (ball.z - ball.radius <= Game.WALL_Z) {
+                ball.z = Game.WALL_Z + ball.radius;
+                
+                // Reflect velocity
+                const normal = { x: 0, y: 0, z: 1 };
+                const dotProduct = ball.vx * normal.x + ball.vy * normal.y + ball.vz * normal.z;
+                
+                ball.vx = (ball.vx - 2 * dotProduct * normal.x) * Game.WALL_RESTITUTION;
+                ball.vy = (ball.vy - 2 * dotProduct * normal.y) * Game.WALL_RESTITUTION;
+                ball.vz = (ball.vz - 2 * dotProduct * normal.z) * Game.WALL_RESTITUTION;
+            }
+        }
+
+        function autoMovePlayer(dt) {
+            // Predict ball landing position
+            const landing = predictLanding();
+            
+            if (landing !== null) {
+                Game.player.targetX = Math.max(-Game.COURT_WIDTH/2 + 0.5, 
+                                                Math.min(Game.COURT_WIDTH/2 - 0.5, landing.x));
+            }
+            
+            // Smoothly move player toward target (easing)
+            const diff = Game.player.targetX - Game.player.x;
+            const moveSpeed = 5; // m/s
+            const maxMove = moveSpeed * dt;
+            
+            if (Math.abs(diff) > 0.01) {
+                const move = Math.sign(diff) * Math.min(Math.abs(diff), maxMove);
+                Game.player.x += move;
+            }
+        }
+
+        function predictLanding() {
+            // Simulate ball trajectory to predict where it will land at player's Z plane
+            const simBall = {
+                x: Game.ball.x,
+                y: Game.ball.y,
+                z: Game.ball.z,
+                vx: Game.ball.vx,
+                vy: Game.ball.vy,
+                vz: Game.ball.vz
+            };
+            
+            const simDt = 0.01; // 10ms steps for prediction
+            const maxSteps = 500; // 5 second max prediction
+            
+            for (let i = 0; i < maxSteps; i++) {
+                // Apply gravity
+                simBall.vy += Game.GRAVITY * simDt;
+                
+                // Update position
+                simBall.x += simBall.vx * simDt;
+                simBall.y += simBall.vy * simDt;
+                simBall.z += simBall.vz * simDt;
+                
+                // Check floor bounce
+                if (simBall.y >= Game.FLOOR_Y) {
+                    simBall.y = Game.FLOOR_Y;
+                    simBall.vy *= -Game.FLOOR_RESTITUTION;
+                }
+                
+                // Check wall bounce
+                if (simBall.z <= Game.WALL_Z) {
+                    simBall.z = Game.WALL_Z;
+                    simBall.vz *= -Game.WALL_RESTITUTION;
+                }
+                
+                // Check if reached player plane
+                if (simBall.z >= Game.PLAYER_Z && simBall.vz > 0) {
+                    return { x: simBall.x, y: simBall.y };
+                }
+                
+                // Check if ball is moving away
+                if (simBall.z > Game.PLAYER_Z + 5) {
+                    return null;
+                }
+            }
+            
+            return null;
+        }
+
+        // ========================================
+        // RENDERING (Canvas 2D with Perspective)
+        // ========================================
+        function render() {
+            const ctx = Game.ctx;
+            const w = Game.width;
+            const h = Game.height;
+            
+            // Clear canvas
+            ctx.fillStyle = 'rgb(10, 25, 41)';
+            ctx.fillRect(0, 0, w, h);
+            
+            // Camera settings for perspective projection
+            const camera = {
+                x: 0,
+                y: 3,
+                z: 8,
+                fov: 60
+            };
+            
+            // Draw floor grid
+            drawFloor(ctx, camera);
+            
+            // Draw wall
+            drawWall(ctx, camera);
+            
+            // Draw ball
+            drawBall(ctx, camera);
+            
+            // Draw player & racket
+            drawPlayer(ctx, camera);
+            
+            // Draw minimap
+            drawMinimap();
+        }
+
+        function project3D(x, y, z, camera) {
+            // Simple perspective projection
+            const dx = x - camera.x;
+            const dy = y - camera.y;
+            const dz = z - camera.z;
+            
+            if (dz >= 0) return null; // Behind camera
+            
+            const scale = camera.fov / -dz;
+            const screenX = Game.width / 2 + dx * scale * 30;
+            const screenY = Game.height / 2 - dy * scale * 30;
+            const size = scale * 30;
+            
+            return { x: screenX, y: screenY, size: size };
+        }
+
+        function drawFloor(ctx, camera) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            
+            // Draw grid lines
+            for (let x = -4; x <= 4; x += 1) {
+                const p1 = project3D(x, Game.FLOOR_Y, Game.WALL_Z, camera);
+                const p2 = project3D(x, Game.FLOOR_Y, Game.PLAYER_Z + 2, camera);
+                
+                if (p1 && p2) {
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.stroke();
+                }
+            }
+            
+            for (let z = Game.WALL_Z; z <= Game.PLAYER_Z + 2; z += 2) {
+                const p1 = project3D(-4, Game.FLOOR_Y, z, camera);
+                const p2 = project3D(4, Game.FLOOR_Y, z, camera);
+                
+                if (p1 && p2) {
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function drawWall(ctx, camera) {
+            const corners = [
+                project3D(-4, 0, Game.WALL_Z, camera),
+                project3D(4, 0, Game.WALL_Z, camera),
+                project3D(4, 6, Game.WALL_Z, camera),
+                project3D(-4, 6, Game.WALL_Z, camera)
+            ];
+            
+            if (corners.every(c => c !== null)) {
+                ctx.fillStyle = 'rgba(100, 120, 150, 0.3)';
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(corners[0].x, corners[0].y);
+                ctx.lineTo(corners[1].x, corners[1].y);
+                ctx.lineTo(corners[2].x, corners[2].y);
+                ctx.lineTo(corners[3].x, corners[3].y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+
+        function drawBall(ctx, camera) {
+            const pos = project3D(Game.ball.x, Game.ball.y, Game.ball.z, camera);
+            
+            if (pos) {
+                const radius = Game.ball.radius * pos.size;
+                
+                // Shadow on floor
+                const shadowPos = project3D(Game.ball.x, Game.FLOOR_Y, Game.ball.z, camera);
+                if (shadowPos) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    ctx.beginPath();
+                    ctx.ellipse(shadowPos.x, shadowPos.y, radius * 0.8, radius * 0.4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Ball with gradient
+                const gradient = ctx.createRadialGradient(
+                    pos.x - radius * 0.3, pos.y - radius * 0.3, 0,
+                    pos.x, pos.y, radius
+                );
+                gradient.addColorStop(0, '#ffff00');
+                gradient.addColorStop(1, '#ffaa00');
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        function drawPlayer(ctx, camera) {
+            // Draw player body
+            const playerPos = project3D(Game.player.x, 1.5, Game.PLAYER_Z, camera);
+            
+            if (playerPos) {
+                ctx.fillStyle = 'rgba(100, 150, 255, 0.8)';
+                ctx.beginPath();
+                ctx.arc(playerPos.x, playerPos.y, playerPos.size * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw racket (simplified)
+            const pitch = Game.player.racketPitch * Math.PI / 180;
+            const roll = Game.player.racketRoll * Math.PI / 180;
+            
+            const racketOffsetX = Math.sin(roll) * 0.5;
+            const racketOffsetY = -Math.sin(pitch) * 0.3;
+            const racketOffsetZ = -0.5;
+            
+            const racketPos = project3D(
+                Game.player.x + racketOffsetX,
+                1.5 + racketOffsetY,
+                Game.PLAYER_Z + racketOffsetZ,
+                camera
+            );
+            
+            if (racketPos) {
+                ctx.save();
+                ctx.translate(racketPos.x, racketPos.y);
+                ctx.rotate(roll);
+                
+                // Racket face
+                ctx.fillStyle = 'rgba(200, 50, 50, 0.7)';
+                ctx.fillRect(-racketPos.size * 0.4, -racketPos.size * 0.6, 
+                           racketPos.size * 0.8, racketPos.size * 1.2);
+                
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-racketPos.size * 0.4, -racketPos.size * 0.6, 
+                             racketPos.size * 0.8, racketPos.size * 1.2);
+                
+                ctx.restore();
+            }
+        }
+
+        function drawMinimap() {
+            const ctx = Game.miniCtx;
+            const w = Game.miniCanvas.width;
+            const h = Game.miniCanvas.height;
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, w, h);
+            
+            // Scale: map game coordinates to minimap
+            const scaleX = w / Game.COURT_WIDTH;
+            const scaleZ = h / (Game.PLAYER_Z - Game.WALL_Z + 4);
+            
+            function mapX(x) {
+                return w/2 + x * scaleX;
+            }
+            
+            function mapZ(z) {
+                return h - (z - Game.WALL_Z + 2) * scaleZ;
+            }
+            
+            // Draw court bounds
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(mapX(-Game.COURT_WIDTH/2), mapZ(Game.PLAYER_Z + 2), 
+                          Game.COURT_WIDTH * scaleX, 
+                          (Game.PLAYER_Z - Game.WALL_Z + 4) * scaleZ);
+            
+            // Draw wall
+            ctx.fillStyle = 'rgba(150, 150, 150, 0.5)';
+            ctx.fillRect(mapX(-Game.COURT_WIDTH/2), mapZ(Game.WALL_Z) - 5, 
+                        Game.COURT_WIDTH * scaleX, 5);
+            
+            // Draw player
+            ctx.fillStyle = 'rgba(100, 150, 255, 1)';
+            ctx.beginPath();
+            ctx.arc(mapX(Game.player.x), mapZ(Game.PLAYER_Z), 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw ball
+            ctx.fillStyle = 'rgba(255, 255, 0, 1)';
+            ctx.beginPath();
+            ctx.arc(mapX(Game.ball.x), mapZ(Game.ball.z), 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw trajectory prediction
+            const landing = predictLanding();
+            if (landing) {
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(mapX(Game.ball.x), mapZ(Game.ball.z));
+                ctx.lineTo(mapX(landing.x), mapZ(Game.PLAYER_Z));
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        // ========================================
+        // HUD & DEBUG
+        // ========================================
+        function updateHUD() {
+            document.getElementById('score').textContent = 'Score: ' + Game.score;
+            
+            const speed = Math.sqrt(
+                Game.ball.vx * Game.ball.vx + 
+                Game.ball.vy * Game.ball.vy + 
+                Game.ball.vz * Game.ball.vz
+            );
+            document.getElementById('ballSpeed').textContent = speed.toFixed(1);
+            
+            // Update debug overlay
+            const overlay = document.getElementById('debugOverlay');
+            if (overlay.classList.contains('active')) {
+                document.getElementById('dbgPitch').textContent = 
+                    (Game.desktop.active ? Game.desktop.pitch : Game.sensor.pitch).toFixed(1);
+                document.getElementById('dbgRoll').textContent = 
+                    (Game.desktop.active ? Game.desktop.roll : Game.sensor.roll).toFixed(1);
+                document.getElementById('dbgSpeed').textContent = 
+                    Game.sensor.speedFiltered.toFixed(1);
+                document.getElementById('dbgSwing').textContent = 
+                    (Game.swing.cooldown > 0 ? 'YES' : 'NO');
+                document.getElementById('dbgFps').textContent = Game.fps;
+            }
+        }
+
+        function toggleDebug() {
+            document.getElementById('debugOverlay').classList.toggle('active');
+        }
+
+        // ========================================
+        // START
+        // ========================================
+        window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>
