@@ -1,96 +1,351 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Phone IMU Data Viewer</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 20px;
-      background: #f4f4f9;
-    }
-    h1 {
-      color: #333;
-    }
-    .data {
-      font-size: 1.2em;
-      background: white;
-      padding: 10px;
-      border-radius: 10px;
-      margin: 10px auto;
-      width: 80%;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-    button {
-      background: #007bff;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 1em;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #0056b3;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone IMU Orientation Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.active {
+            background: rgba(76, 175, 80, 0.5);
+            border-color: #4CAF50;
+        }
+
+        .data-display {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+
+        .data-label {
+            font-weight: bold;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .status.error {
+            background: rgba(244, 67, 54, 0.3);
+        }
+
+        .status.success {
+            background: rgba(76, 175, 80, 0.3);
+        }
+    </style>
 </head>
 <body>
+    <div class="container">
+        <h1>📱 Phone Orientation Visualizer</h1>
+        
+        <div id="status" class="status">Click "Start Tracking" to begin</div>
+        
+        <div id="canvas-container">
+            <canvas id="canvas" width="400" height="300"></canvas>
+        </div>
 
-  <h1>📱 Phone IMU Data</h1>
-  <button id="startBtn">Enable Motion</button>
+        <div class="controls">
+            <button id="startBtn">Start Tracking</button>
+            <button id="resetBtn">Reset Orientation</button>
+        </div>
 
-  <div class="data">
-    <h3>Accelerometer (m/s²)</h3>
-    <p id="accel">x: 0, y: 0, z: 0</p>
-  </div>
+        <div class="data-display">
+            <div class="data-row">
+                <span class="data-label">Alpha (Z-axis):</span>
+                <span id="alpha">0°</span>
+            </div>
+            <div class="data-row">
+                <span class="data-label">Beta (X-axis):</span>
+                <span id="beta">0°</span>
+            </div>
+            <div class="data-row">
+                <span class="data-label">Gamma (Y-axis):</span>
+                <span id="gamma">0°</span>
+            </div>
+        </div>
+    </div>
 
-  <div class="data">
-    <h3>Gyroscope (°/s)</h3>
-    <p id="gyro">alpha: 0, beta: 0, gamma: 0</p>
-  </div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const statusDiv = document.getElementById('status');
+        
+        let isTracking = false;
+        let alpha = 0, beta = 0, gamma = 0;
+        let offsetAlpha = 0, offsetBeta = 0, offsetGamma = 0;
 
-  <script>
-    const accelElem = document.getElementById("accel");
-    const gyroElem = document.getElementById("gyro");
-    const startBtn = document.getElementById("startBtn");
+        // Draw 3D phone representation
+        function drawPhone() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            
+            // Apply rotations
+            const rotX = (beta - offsetBeta) * Math.PI / 180;
+            const rotY = (gamma - offsetGamma) * Math.PI / 180;
+            const rotZ = (alpha - offsetAlpha) * Math.PI / 180;
+            
+            // Define phone corners (as a rectangular prism)
+            const width = 60;
+            const height = 120;
+            const depth = 10;
+            
+            // 3D vertices of the phone
+            let vertices = [
+                [-width/2, -height/2, -depth/2],
+                [width/2, -height/2, -depth/2],
+                [width/2, height/2, -depth/2],
+                [-width/2, height/2, -depth/2],
+                [-width/2, -height/2, depth/2],
+                [width/2, -height/2, depth/2],
+                [width/2, height/2, depth/2],
+                [-width/2, height/2, depth/2]
+            ];
+            
+            // Rotate vertices
+            vertices = vertices.map(v => {
+                // Rotate around X axis
+                let y = v[1] * Math.cos(rotX) - v[2] * Math.sin(rotX);
+                let z = v[1] * Math.sin(rotX) + v[2] * Math.cos(rotX);
+                let x = v[0];
+                
+                // Rotate around Y axis
+                let x2 = x * Math.cos(rotY) + z * Math.sin(rotY);
+                let z2 = -x * Math.sin(rotY) + z * Math.cos(rotY);
+                
+                // Rotate around Z axis
+                let x3 = x2 * Math.cos(rotZ) - y * Math.sin(rotZ);
+                let y3 = x2 * Math.sin(rotZ) + y * Math.cos(rotZ);
+                
+                return [x3, y3, z2];
+            });
+            
+            // Project to 2D and draw
+            const scale = 2;
+            const projected = vertices.map(v => [
+                centerX + v[0] * scale,
+                centerY + v[1] * scale,
+                v[2]
+            ]);
+            
+            // Define faces
+            const faces = [
+                [0, 1, 2, 3], // Front
+                [4, 5, 6, 7], // Back
+                [0, 1, 5, 4], // Bottom
+                [2, 3, 7, 6], // Top
+                [0, 3, 7, 4], // Left
+                [1, 2, 6, 5]  // Right
+            ];
+            
+            const faceColors = [
+                'rgba(100, 150, 255, 0.8)', // Front - blue
+                'rgba(80, 120, 200, 0.6)',  // Back
+                'rgba(150, 150, 150, 0.7)', // Bottom
+                'rgba(150, 150, 150, 0.7)', // Top
+                'rgba(120, 140, 220, 0.7)', // Left
+                'rgba(120, 140, 220, 0.7)'  // Right
+            ];
+            
+            // Calculate average Z for each face (for depth sorting)
+            const facesWithDepth = faces.map((face, idx) => {
+                const avgZ = face.reduce((sum, i) => sum + projected[i][2], 0) / face.length;
+                return { face, color: faceColors[idx], depth: avgZ };
+            });
+            
+            // Sort faces by depth (painter's algorithm)
+            facesWithDepth.sort((a, b) => a.depth - b.depth);
+            
+            // Draw faces
+            facesWithDepth.forEach(({ face, color }) => {
+                ctx.beginPath();
+                ctx.moveTo(projected[face[0]][0], projected[face[0]][1]);
+                for (let i = 1; i < face.length; i++) {
+                    ctx.lineTo(projected[face[i]][0], projected[face[i]][1]);
+                }
+                ctx.closePath();
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+            
+            // Draw a circle on the front face to indicate orientation
+            const frontCenter = [
+                (projected[0][0] + projected[1][0] + projected[2][0] + projected[3][0]) / 4,
+                (projected[0][1] + projected[1][1] + projected[2][1] + projected[3][1]) / 4
+            ];
+            ctx.beginPath();
+            ctx.arc(frontCenter[0], frontCenter[1] - 30, 8, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 100, 100, 0.9)';
+            ctx.fill();
+        }
 
-    function updateAccel(event) {
-      const x = event.acceleration.x?.toFixed(2) || 0;
-      const y = event.acceleration.y?.toFixed(2) || 0;
-      const z = event.acceleration.z?.toFixed(2) || 0;
-      accelElem.textContent = `x: ${x}, y: ${y}, z: ${z}`;
-    }
+        // Handle device orientation
+        function handleOrientation(event) {
+            if (!isTracking) return;
+            
+            alpha = event.alpha || 0;
+            beta = event.beta || 0;
+            gamma = event.gamma || 0;
+            
+            document.getElementById('alpha').textContent = alpha.toFixed(1) + '°';
+            document.getElementById('beta').textContent = beta.toFixed(1) + '°';
+            document.getElementById('gamma').textContent = gamma.toFixed(1) + '°';
+            
+            drawPhone();
+        }
 
-    function updateGyro(event) {
-      const alpha = event.alpha?.toFixed(2) || 0;
-      const beta = event.beta?.toFixed(2) || 0;
-      const gamma = event.gamma?.toFixed(2) || 0;
-      gyroElem.textContent = `alpha: ${alpha}, beta: ${beta}, gamma: ${gamma}`;
-    }
+        // Start tracking
+        async function startTracking() {
+            if (isTracking) {
+                isTracking = false;
+                startBtn.textContent = 'Start Tracking';
+                startBtn.classList.remove('active');
+                statusDiv.textContent = 'Tracking stopped';
+                statusDiv.className = 'status';
+                return;
+            }
 
-    startBtn.addEventListener("click", () => {
-      if (typeof DeviceMotionEvent.requestPermission === "function") {
-        // iOS requires permission
-        DeviceMotionEvent.requestPermission().then(response => {
-          if (response === "granted") {
-            window.addEventListener("devicemotion", updateAccel);
-            window.addEventListener("deviceorientation", updateGyro);
-            startBtn.style.display = "none";
-          } else {
-            alert("Permission denied for motion sensors.");
-          }
-        });
-      } else {
-        // Android or other browsers
-        window.addEventListener("devicemotion", updateAccel);
-        window.addEventListener("deviceorientation", updateGyro);
-        startBtn.style.display = "none";
-      }
-    });
-  </script>
+            // Request permission for iOS 13+
+            if (typeof DeviceOrientationEvent !== 'undefined' && 
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        statusDiv.textContent = 'Permission denied';
+                        statusDiv.className = 'status error';
+                        return;
+                    }
+                } catch (error) {
+                    statusDiv.textContent = 'Error: ' + error.message;
+                    statusDiv.className = 'status error';
+                    return;
+                }
+            }
 
+            // Check if device orientation is supported
+            if (!window.DeviceOrientationEvent) {
+                statusDiv.textContent = 'Device orientation not supported';
+                statusDiv.className = 'status error';
+                return;
+            }
+
+            isTracking = true;
+            startBtn.textContent = 'Stop Tracking';
+            startBtn.classList.add('active');
+            statusDiv.textContent = 'Tracking active';
+            statusDiv.className = 'status success';
+            
+            window.addEventListener('deviceorientation', handleOrientation);
+        }
+
+        // Reset orientation
+        function resetOrientation() {
+            offsetAlpha = alpha;
+            offsetBeta = beta;
+            offsetGamma = gamma;
+            drawPhone();
+        }
+
+        startBtn.addEventListener('click', startTracking);
+        resetBtn.addEventListener('click', resetOrientation);
+
+        // Initial draw
+        drawPhone();
+    </script>
 </body>
 </html>
