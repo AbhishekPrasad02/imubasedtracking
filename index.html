@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phone IMU Data Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+      background: #f4f4f9;
+    }
+    h1 {
+      color: #333;
+    }
+    .data {
+      font-size: 1.2em;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      margin: 10px auto;
+      width: 80%;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 1em;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>📱 Phone IMU Data</h1>
+  <button id="startBtn">Enable Motion</button>
+
+  <div class="data">
+    <h3>Accelerometer (m/s²)</h3>
+    <p id="accel">x: 0, y: 0, z: 0</p>
+  </div>
+
+  <div class="data">
+    <h3>Gyroscope (°/s)</h3>
+    <p id="gyro">alpha: 0, beta: 0, gamma: 0</p>
+  </div>
+
+  <script>
+    const accelElem = document.getElementById("accel");
+    const gyroElem = document.getElementById("gyro");
+    const startBtn = document.getElementById("startBtn");
+
+    function updateAccel(event) {
+      const x = event.acceleration.x?.toFixed(2) || 0;
+      const y = event.acceleration.y?.toFixed(2) || 0;
+      const z = event.acceleration.z?.toFixed(2) || 0;
+      accelElem.textContent = `x: ${x}, y: ${y}, z: ${z}`;
+    }
+
+    function updateGyro(event) {
+      const alpha = event.alpha?.toFixed(2) || 0;
+      const beta = event.beta?.toFixed(2) || 0;
+      const gamma = event.gamma?.toFixed(2) || 0;
+      gyroElem.textContent = `alpha: ${alpha}, beta: ${beta}, gamma: ${gamma}`;
+    }
+
+    startBtn.addEventListener("click", () => {
+      if (typeof DeviceMotionEvent.requestPermission === "function") {
+        // iOS requires permission
+        DeviceMotionEvent.requestPermission().then(response => {
+          if (response === "granted") {
+            window.addEventListener("devicemotion", updateAccel);
+            window.addEventListener("deviceorientation", updateGyro);
+            startBtn.style.display = "none";
+          } else {
+            alert("Permission denied for motion sensors.");
+          }
+        });
+      } else {
+        // Android or other browsers
+        window.addEventListener("devicemotion", updateAccel);
+        window.addEventListener("deviceorientation", updateGyro);
+        startBtn.style.display = "none";
+      }
+    });
+  </script>
+
+</body>
+</html>
